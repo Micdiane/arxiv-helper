@@ -23,6 +23,7 @@ from .config import (
     FAISS_INDEX_TYPE,
     FAISS_NLIST,
     INDEX_PATH,
+    DEFAULT_BATCH_SIZE
 )
 from .models import Paper
 from .pdf_processor import get_paper_text
@@ -347,29 +348,31 @@ class PaperIndexer:
         self, query_text: str, top_k: int = 10
     ) -> List[Tuple[str, float]]:
         """
-        根据文本查询查找相似论文
+        根据文本查询相似论文
         
         Args:
             query_text: 查询文本
-            top_k: 返回的结果数量
+            top_k: 返回的相似论文数量
             
         Returns:
-            类似论文的ArXiv ID和相似度分数列表
+            相似论文ID和相似度列表 [(arxiv_id, score), ...]
         """
+        if not query_text.strip():
+            logger.warning("查询文本为空")
+            return []
+            
         try:
-            # 生成查询向量
+            # 生成查询文本的向量
             query_embedding = self.generate_embedding(query_text)
             
-            # 查找相似论文
-            similar_papers = self.find_similar_papers(query_embedding, top_k)
-            
-            return similar_papers
+            # 搜索相似论文
+            return self.find_similar_papers(query_embedding, top_k)
             
         except Exception as e:
-            logger.error(f"根据文本查找相似论文失败: {e}")
+            logger.error(f"文本查询相似论文失败: {e}")
             return []
 
-    def update_index(self, batch_size: int = 50) -> int:
+    def update_index(self, batch_size: int = DEFAULT_BATCH_SIZE) -> int:
         """
         更新索引，处理未向量化的论文
         

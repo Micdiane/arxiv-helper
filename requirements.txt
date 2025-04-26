@@ -12,3 +12,4 @@ pymupdf>=1.21.1
 python-multipart>=0.0.6
 pydantic>=1.10.7
 httpx>=0.24.0 
+SQLAlchemy

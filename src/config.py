@@ -19,7 +19,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/data/papers.db")
 # ArXiv API配置
 ARXIV_CATEGORIES = os.getenv("ARXIV_CATEGORIES", "cs.AI,cs.CL,cs.CV,cs.LG").split(",")
 MAX_RESULTS_PER_QUERY = int(os.getenv("MAX_RESULTS_PER_QUERY", "100"))
-DAYS_TO_FETCH = int(os.getenv("DAYS_TO_FETCH", "7"))
+DAYS_TO_FETCH = int(os.getenv("DAYS_TO_FETCH", "100"))
 
 # 文件存储路径
 PDF_PATH = Path(os.getenv("PDF_PATH", "./data/pdf")).resolve()
@@ -30,6 +30,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 USE_FULL_TEXT = os.getenv("USE_FULL_TEXT", "False").lower() in ("true", "1", "t")
 FAISS_INDEX_TYPE = os.getenv("FAISS_INDEX_TYPE", "IVFFlat")
 FAISS_NLIST = int(os.getenv("FAISS_NLIST", "100"))
+DEFAULT_BATCH_SIZE = int(os.getenv("DEFAULT_BATCH_SIZE", "50"))
 
 # 确保数据目录存在
 PDF_PATH.mkdir(exist_ok=True, parents=True)
