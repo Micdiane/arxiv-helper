@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="paper-detail">
+    <div class="paper-nav">
+        <a href="/" class="btn">← 返回列表</a>
+    </div>
+    
+    <div id="paper-container">
+        <div class="loading">加载中...</div>
+    </div>
+    
+    <div class="similar-papers">
+        <h2>相似论文</h2>
+        <div id="similar-container">
+            <div class="loading">加载中...</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const arxivId = '{{ arxiv_id }}';
+        
+        // 加载论文详情
+        function loadPaperDetail() {
+            const paperContainer = document.getElementById('paper-container');
+            
+            fetch(`/api/paper/${arxivId}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('论文加载失败');
+                    }
+                    return response.json();
+                })
+                .then(paper => {
+                    // 日期格式化
+                    const publishDate = new Date(paper.published_date);
+                    const formattedDate = publishDate.toLocaleDateString('zh-CN');
+                    
+                    // 构建作者字符串
+                    const authors = paper.authors.join(', ');
+                    
+                    // 收藏按钮类
+                    const favoriteClass = paper.is_favorite ? 'favorite-btn active' : 'favorite-btn';
+                    
+                    // 设置页面标题
+                    document.title = `${paper.title} - ArXiv Helper`;
+                    
+                    // 构建详情HTML
+                    let html = `
+                        <div class="paper-header-detail">
+                            <h1 class="paper-title-detail">${paper.title}</h1>
+                            <button id="favorite-btn" class="${favoriteClass}" data-id="${paper.arxiv_id}">
+                                ${paper.is_favorite ? '★ 已收藏' : '☆ 收藏'}
+                            </button>
+                        </div>
+                        <div class="paper-meta-detail">
+                            <div class="meta-row">
+                                <span class="meta-label">作者:</span>
+                                <span class="meta-value">${authors}</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">发布日期:</span>
+                                <span class="meta-value">${formattedDate}</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">分类:</span>
+                                <span class="meta-value">${paper.primary_category}</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">ID:</span>
+                                <span class="meta-value">${paper.arxiv_id}v${paper.version}</span>
+                            </div>
+                        </div>
+                        <div class="paper-links">
+                            <a href="${paper.arxiv_url}" target="_blank" class="btn">在arXiv上查看</a>
+                            <a href="${paper.pdf_url}" target="_blank" class="btn">下载PDF</a>
+                        </div>
+                        <div class="paper-abstract-detail">
+                            <h3>摘要</h3>
+                            <p>${paper.abstract}</p>
+                        </div>
+                    `;
+                    
+                    paperContainer.innerHTML = html;
+                    
+                    // 添加收藏按钮事件
+                    document.getElementById('favorite-btn').addEventListener('click', function() {
+                        toggleFavorite(paper.arxiv_id, this);
+                    });
+                    
+                    // 加载相似论文
+                    loadSimilarPapers(paper.arxiv_id);
+                })
+                .catch(error => {
+                    console.error('加载论文失败:', error);
+                    paperContainer.innerHTML = '<div class="error">论文加载失败，请重试</div>';
+                });
+        }
+        
+        // 加载相似论文
+        function loadSimilarPapers(arxivId, k = 10) {
+            const similarContainer = document.getElementById('similar-container');
+            
+            fetch(`/api/similar/${arxivId}?k=${k}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.papers.length === 0) {
+                        similarContainer.innerHTML = '<div class="no-results">没有找到相似论文</div>';
+                        return;
+                    }
+                    
+                    let html = '<div class="similar-papers-list">';
+                    
+                    data.papers.forEach(paper => {
+                        // 日期格式化
+                        const publishDate = new Date(paper.published_date);
+                        const formattedDate = publishDate.toLocaleDateString('zh-CN');
+                        
+                        // 截断标题和摘要
+                        const shortTitle = paper.title.length > 100 
+                            ? paper.title.substring(0, 100) + '...' 
+                            : paper.title;
+                            
+                        const shortAbstract = paper.abstract.length > 150 
+                            ? paper.abstract.substring(0, 150) + '...' 
+                            : paper.abstract;
+                        
+                        html += `
+                            <div class="similar-paper-card">
+                                <h4 class="similar-paper-title">
+                                    <a href="/paper/${paper.arxiv_id}">${shortTitle}</a>
+                                </h4>
+                                <div class="similar-paper-meta">
+                                    <span class="paper-date">${formattedDate}</span>
+                                    <span class="paper-category">${paper.primary_category}</span>
+                                </div>
+                                <div class="similar-paper-abstract">${shortAbstract}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                    similarContainer.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('加载相似论文失败:', error);
+                    similarContainer.innerHTML = '<div class="error">加载相似论文失败，请重试</div>';
+                });
+        }
+        
+        // 切换收藏状态
+        function toggleFavorite(arxivId, button) {
+            fetch(`/api/library/${arxivId}/toggle`, {
+                method: 'POST',
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.is_favorite) {
+                        button.classList.add('active');
+                        button.textContent = '★ 已收藏';
+                    } else {
+                        button.classList.remove('active');
+                        button.textContent = '☆ 收藏';
+                    }
+                })
+                .catch(error => {
+                    console.error('切换收藏状态失败:', error);
+                });
+        }
+        
+        // 加载论文详情
+        loadPaperDetail();
+    });
+</script>
+{% endblock %} 

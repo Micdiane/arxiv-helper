@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>我的收藏夹</h1>
+</div>
+
+<div id="library-container" class="papers-list">
+    <div class="loading">加载中...</div>
+</div>
+
+<div class="pagination">
+    <button id="prev-page" disabled>上一页</button>
+    <span id="page-info">第 <span id="current-page">1</span> 页</span>
+    <button id="next-page">下一页</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化变量
+        let currentPage = 1;
+        const pageSize = 20;
+        let totalPapers = 0;
+        
+        // 加载收藏夹
+        function loadLibrary(page = 1) {
+            const skip = (page - 1) * pageSize;
+            const libraryContainer = document.getElementById('library-container');
+            
+            // 显示加载中
+            libraryContainer.innerHTML = '<div class="loading">加载中...</div>';
+            
+            // 发送API请求
+            fetch(`/api/library?skip=${skip}&limit=${pageSize}`)
+                .then(response => response.json())
+                .then(data => {
+                    // 更新总数和当前页
+                    totalPapers = data.total;
+                    currentPage = page;
+                    
+                    // 更新页面信息
+                    document.getElementById('current-page').textContent = currentPage;
+                    
+                    // 更新分页按钮状态
+                    document.getElementById('prev-page').disabled = currentPage <= 1;
+                    document.getElementById('next-page').disabled = skip + pageSize >= totalPapers;
+                    
+                    // 清空容器
+                    libraryContainer.innerHTML = '';
+                    
+                    if (data.papers.length === 0) {
+                        libraryContainer.innerHTML = '<div class="no-results">收藏夹为空</div>';
+                        return;
+                    }
+                    
+                    // 添加论文卡片
+                    data.papers.forEach(paper => {
+                        const paperCard = createPaperCard(paper);
+                        libraryContainer.appendChild(paperCard);
+                    });
+                })
+                .catch(error => {
+                    console.error('加载收藏夹失败:', error);
+                    libraryContainer.innerHTML = '<div class="error">加载失败，请重试</div>';
+                });
+        }
+        
+        // 创建论文卡片
+        function createPaperCard(paper) {
+            const card = document.createElement('div');
+            card.className = 'paper-card';
+            
+            // 收藏图标
+            const favoriteClass = paper.is_favorite ? 'favorite active' : 'favorite';
+            
+            // 日期格式化
+            const publishDate = new Date(paper.published_date);
+            const formattedDate = publishDate.toLocaleDateString('zh-CN');
+            
+            // 截断摘要
+            const shortAbstract = paper.abstract.length > 250 
+                ? paper.abstract.substring(0, 250) + '...' 
+                : paper.abstract;
+            
+            // 构建作者字符串
+            const authors = paper.authors.join(', ');
+            
+            card.innerHTML = `
+                <div class="paper-header">
+                    <h3 class="paper-title">
+                        <a href="/paper/${paper.arxiv_id}" class="paper-link">${paper.title}</a>
+                    </h3>
+                    <button class="${favoriteClass}" data-id="${paper.arxiv_id}">★</button>
+                </div>
+                <div class="paper-meta">
+                    <span class="paper-authors">${authors}</span>
+                    <span class="paper-date">${formattedDate}</span>
+                    <span class="paper-category">${paper.primary_category}</span>
+                </div>
+                <div class="paper-abstract">${shortAbstract}</div>
+                <div class="paper-actions">
+                    <a href="${paper.arxiv_url}" target="_blank" class="btn btn-sm">ArXiv</a>
+                    <a href="${paper.pdf_url}" target="_blank" class="btn btn-sm">PDF</a>
+                    <a href="/paper/${paper.arxiv_id}" class="btn btn-sm">查看详情</a>
+                </div>
+            `;
+            
+            // 添加收藏按钮事件
+            const favoriteBtn = card.querySelector('.favorite');
+            favoriteBtn.addEventListener('click', function() {
+                toggleFavorite(paper.arxiv_id, favoriteBtn);
+                
+                // 从收藏夹移除后，重新加载当前页
+                setTimeout(() => {
+                    loadLibrary(currentPage);
+                }, 300);
+            });
+            
+            return card;
+        }
+        
+        // 切换收藏状态
+        function toggleFavorite(arxivId, button) {
+            fetch(`/api/library/${arxivId}/toggle`, {
+                method: 'POST',
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.is_favorite) {
+                        button.classList.add('active');
+                    } else {
+                        button.classList.remove('active');
+                    }
+                })
+                .catch(error => {
+                    console.error('切换收藏状态失败:', error);
+                });
+        }
+        
+        // 添加分页事件
+        document.getElementById('prev-page').addEventListener('click', function() {
+            if (currentPage > 1) {
+                loadLibrary(currentPage - 1);
+            }
+        });
+        
+        document.getElementById('next-page').addEventListener('click', function() {
+            loadLibrary(currentPage + 1);
+        });
+        
+        // 初始加载
+        loadLibrary(1);
+    });
+</script>
+{% endblock %} 

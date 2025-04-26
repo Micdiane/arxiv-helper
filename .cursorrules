@@ -1,0 +1,100 @@
+1. 总体目标 (Overall Goal):
+构建一个轻量级、本地化部署的桌面应用程序或Web服务。
+核心目标是帮助用户高效浏览、搜索 arXiv 论文，并利用先进的语义相似性搜索功能发现相关研究。
+优先考虑易用性、快速响应和最低的外部依赖，使其易于在个人计算机上运行和维护。
+是对原 arxiv-sanity-preserver 项目的现代化改造，专注于核心价值，简化架构。
+2. 核心功能 (Core Functionality):
+论文获取与存储:
+从 arXiv API 获取指定领域（可配置）的论文元数据（标题、作者、摘要、ID、版本、日期等）。
+将元数据存储在本地 SQLite 数据库中。
+下载论文 PDF 文件到本地指定目录。
+内容处理与索引:
+从 PDF 文件中提取文本（优先使用摘要，可配置为全文或标题+摘要）。
+使用预训练的 Sentence Transformer 模型为每篇论文生成高质量的语义向量（Embedding）。
+构建并维护一个 Faiss (或其他 ANN 库) 索引，用于存储和快速查询这些语义向量。
+用户交互界面 (Web UI):
+浏览: 按时间顺序浏览最新添加的论文。
+关键词搜索: 在论文标题和摘要中进行基本的文本搜索。
+语义相似性搜索:
+选择任意一篇论文。
+系统快速查找并展示与其在语义上最相似的其他论文列表。
+论文详情: 显示单篇论文的详细元数据（标题、作者、摘要、发布日期等）。
+本地收藏夹 (Library): 允许用户标记/取消标记感兴趣的论文，并在专门的视图中查看。
+3. 技术栈 (Technology Stack):
+后端框架: FastAPI
+理由: 现代、高性能、自带类型检查与数据校验、自动生成交互式 API 文档 (Swagger UI)，适合构建清晰的 API。
+数据库: SQLite
+理由: 零配置、单文件存储、完美契合本地化部署，无需额外数据库服务。
+PDF 处理: PyMuPDF (fitz)
+理由: 纯 Python 绑定，性能优于外部命令调用，易于集成文本提取。
+语义嵌入: Sentence Transformers (sentence-transformers 库)
+理由: SOTA 级别的文本嵌入效果，易于使用各种预训练模型 (如 all-MiniLM-L6-v2 或更高精度模型)，能捕捉语义而非仅关键词。
+相似性索引: Faiss (faiss-cpu)
+理由: 高效的近似最近邻 (ANN) 搜索库，支持多种索引类型，能处理大量向量并快速检索，faiss-cpu 版本易于安装。
+Web 服务器 (FastAPI 运行): Uvicorn
+理由: ASGI 标准实现，FastAPI 推荐的生产级服务器。
+前端: HTML, CSS, Vanilla JavaScript
+理由: 保持轻量级，避免复杂前端框架的构建和依赖。JS 通过 Fetch API 与后端 FastAPI 交互。 (可选: HTMX 或 Alpine.js 可用于增强交互性，但非必需)。
+数据获取: feedparser (解析 ArXiv Atom Feed), requests (下载 PDF).
+4. 关键设计技术细节 (Key Design/Technical Details):
+数据流:
+fetch_papers.py (或类似脚本) 定期运行: ArXiv API -> 解析 -> SQLite 元数据更新。
+该脚本触发或后续步骤处理: 下载缺失的 PDF。
+update_index.py (或集成在 fetch 脚本中):
+查询 SQLite 找未处理/更新的论文。
+加载 Sentence Transformer 模型。
+加载 Faiss 索引文件。
+提取文本 (PyMuPDF)。
+生成 Embedding。
+将 (Embedding, PaperID) 添加/更新到 Faiss 索引。
+更新 SQLite 中论文的处理状态。
+保存 Faiss 索引文件。
+数据库 Schema (SQLite - papers 表):
+arxiv_id (TEXT, PRIMARY KEY - e.g., '2301.12345')
+version (INTEGER)
+title (TEXT)
+authors (TEXT - JSON 格式存储作者列表)
+abstract (TEXT)
+published_date (TEXT/INTEGER - ISO 格式或 Unix 时间戳)
+updated_date (TEXT/INTEGER)
+primary_category (TEXT)
+pdf_url (TEXT)
+local_pdf_path (TEXT, NULLABLE)
+is_vectorized (INTEGER DEFAULT 0 - 0: 未处理, 1: 已向量化并索引)
+is_favorite (INTEGER DEFAULT 0 - 0: 未收藏, 1: 已收藏)
+Embedding 策略:
+默认嵌入论文摘要 (Abstract)。可配置为 title + " " + abstract 以包含标题信息。
+选择一个平衡速度、内存占用和准确性的 sentence-transformers 预训练模型 (e.g., all-MiniLM-L6-v2)。模型名称应可配置。
+Faiss 索引策略:
+使用 faiss.IndexIDMap 包裹一个基础索引 (如 faiss.IndexFlatL2 或 IndexIVFFlat)。
+IndexIDMap 允许使用论文的唯一标识符 (如 SQLite 的 rowid 或 ArXiv ID 映射的整数) 作为 Faiss 内部 ID，方便查询后直接映射回论文。
+索引需要持久化存储到文件 (faiss.write_index, faiss.read_index)。
+相似性搜索 API (/api/similar/{arxiv_id_v}) 逻辑:
+接收带版本的 ArXiv ID (e.g., '2301.12345v1')。
+从 SQLite 中获取该论文的摘要。
+使用加载的 Sentence Transformer 模型实时计算查询论文的 embedding (或从缓存/预计算存储中获取，但实时计算更简单)。
+使用查询 embedding 在 Faiss 索引中搜索 k 个最近邻，获取邻居的 (Faiss ID, distance) 列表。
+将 Faiss ID 映射回 ArXiv ID (去掉版本号)。
+从 SQLite 中批量获取这些 ArXiv ID 对应的完整元数据。
+过滤掉查询论文本身。
+返回 JSON 格式的相似论文元数据列表。
+API 设计:
+遵循 RESTful 原则。
+使用 FastAPI 的 Pydantic 模型进行请求/响应校验。
+主要 Endpoints:
+GET /api/papers?skip=0&limit=50&sort=date/relevance: 获取论文列表 (分页, 排序)。
+GET /api/search?q=query: 关键词搜索。
+GET /api/similar/{arxiv_id_v}?k=10: 获取相似论文。
+GET /api/library: 获取收藏夹论文。
+POST /api/library/{arxiv_id}/toggle: 切换收藏状态。
+GET /api/paper/{arxiv_id_v}: 获取单篇论文详情。
+配置: 使用简单的配置文件 (e.g., .env 或 config.py) 管理 arXiv 类别、数据存储路径、Sentence Transformer 模型名称、Faiss 索引参数等。
+更新流程: 设计为可增量更新。获取新论文后，只需对新论文进行 PDF 下载、文本提取、向量化和索引添加操作，无需重新处理所有数据。
+5. 期望输出 (Expected Output):
+可运行的 Python 项目: 包含 FastAPI 后端代码、数据处理脚本 (fetch_papers.py, update_index.py 等)。
+数据文件:
+papers.db: SQLite 数据库文件。
+vectors.index: Faiss 索引文件。
+data/pdf/: 存储下载的 PDF 文件的目录。
+Web 界面: 一个通过浏览器访问的本地 Web 应用 (e.g., http://127.0.0.1:8000)，提供上述核心功能的用户界面。
+文档: README.md 文件，清晰说明如何进行安装、配置、运行数据处理脚本以及启动 Web 服务。

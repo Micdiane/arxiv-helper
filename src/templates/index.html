@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>最新论文</h1>
+</div>
+
+<div class="paper-controls">
+    <div class="paper-filter">
+        <label for="sort-select">排序方式:</label>
+        <select id="sort-select">
+            <option value="date" selected>发布日期</option>
+            <option value="relevance">相关性</option>
+        </select>
+    </div>
+    <div class="paper-search">
+        <input type="text" id="quick-search" placeholder="快速搜索...">
+        <button id="search-btn">搜索</button>
+    </div>
+</div>
+
+<div id="papers-container" class="papers-list">
+    <div class="loading">加载中...</div>
+</div>
+
+<div class="pagination">
+    <button id="prev-page" disabled>上一页</button>
+    <span id="page-info">第 <span id="current-page">1</span> 页</span>
+    <button id="next-page">下一页</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // 页面加载完成后执行
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化变量
+        let currentPage = 1;
+        const pageSize = 20;
+        let currentSort = 'date';
+        let totalPapers = 0;
+        
+        // 加载论文列表
+        function loadPapers(page = 1, sort = 'date') {
+            const skip = (page - 1) * pageSize;
+            const papersContainer = document.getElementById('papers-container');
+            
+            // 显示加载中
+            papersContainer.innerHTML = '<div class="loading">加载中...</div>';
+            
+            // 发送API请求
+            fetch(`/api/papers?skip=${skip}&limit=${pageSize}&sort=${sort}`)
+                .then(response => response.json())
+                .then(data => {
+                    // 更新总数和当前页
+                    totalPapers = data.total;
+                    currentPage = page;
+                    
+                    // 更新页面信息
+                    document.getElementById('current-page').textContent = currentPage;
+                    
+                    // 更新分页按钮状态
+                    document.getElementById('prev-page').disabled = currentPage <= 1;
+                    document.getElementById('next-page').disabled = skip + pageSize >= totalPapers;
+                    
+                    // 清空容器
+                    papersContainer.innerHTML = '';
+                    
+                    if (data.papers.length === 0) {
+                        papersContainer.innerHTML = '<div class="no-results">暂无论文</div>';
+                        return;
+                    }
+                    
+                    // 添加论文卡片
+                    data.papers.forEach(paper => {
+                        const paperCard = createPaperCard(paper);
+                        papersContainer.appendChild(paperCard);
+                    });
+                })
+                .catch(error => {
+                    console.error('加载论文失败:', error);
+                    papersContainer.innerHTML = '<div class="error">加载失败，请重试</div>';
+                });
+        }
+        
+        // 创建论文卡片
+        function createPaperCard(paper) {
+            const card = document.createElement('div');
+            card.className = 'paper-card';
+            
+            // 收藏图标
+            const favoriteClass = paper.is_favorite ? 'favorite active' : 'favorite';
+            
+            // 日期格式化
+            const publishDate = new Date(paper.published_date);
+            const formattedDate = publishDate.toLocaleDateString('zh-CN');
+            
+            // 截断摘要
+            const shortAbstract = paper.abstract.length > 250 
+                ? paper.abstract.substring(0, 250) + '...' 
+                : paper.abstract;
+            
+            // 构建作者字符串
+            const authors = paper.authors.join(', ');
+            
+            card.innerHTML = `
+                <div class="paper-header">
+                    <h3 class="paper-title">
+                        <a href="/paper/${paper.arxiv_id}" class="paper-link">${paper.title}</a>
+                    </h3>
+                    <button class="${favoriteClass}" data-id="${paper.arxiv_id}">★</button>
+                </div>
+                <div class="paper-meta">
+                    <span class="paper-authors">${authors}</span>
+                    <span class="paper-date">${formattedDate}</span>
+                    <span class="paper-category">${paper.primary_category}</span>
+                </div>
+                <div class="paper-abstract">${shortAbstract}</div>
+                <div class="paper-actions">
+                    <a href="${paper.arxiv_url}" target="_blank" class="btn btn-sm">ArXiv</a>
+                    <a href="${paper.pdf_url}" target="_blank" class="btn btn-sm">PDF</a>
+                    <a href="/api/similar/${paper.arxiv_id}" class="btn btn-sm btn-similar" data-id="${paper.arxiv_id}">查找相似论文</a>
+                </div>
+            `;
+            
+            // 添加收藏按钮事件
+            const favoriteBtn = card.querySelector('.favorite');
+            favoriteBtn.addEventListener('click', function() {
+                toggleFavorite(paper.arxiv_id, favoriteBtn);
+            });
+            
+            // 添加相似论文按钮事件
+            const similarBtn = card.querySelector('.btn-similar');
+            similarBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                location.href = `/paper/${paper.arxiv_id}`;
+            });
+            
+            return card;
+        }
+        
+        // 切换收藏状态
+        function toggleFavorite(arxivId, button) {
+            fetch(`/api/library/${arxivId}/toggle`, {
+                method: 'POST',
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.is_favorite) {
+                        button.classList.add('active');
+                    } else {
+                        button.classList.remove('active');
+                    }
+                })
+                .catch(error => {
+                    console.error('切换收藏状态失败:', error);
+                });
+        }
+        
+        // 添加排序选择事件
+        document.getElementById('sort-select').addEventListener('change', function() {
+            currentSort = this.value;
+            loadPapers(1, currentSort);
+        });
+        
+        // 添加分页事件
+        document.getElementById('prev-page').addEventListener('click', function() {
+            if (currentPage > 1) {
+                loadPapers(currentPage - 1, currentSort);
+            }
+        });
+        
+        document.getElementById('next-page').addEventListener('click', function() {
+            loadPapers(currentPage + 1, currentSort);
+        });
+        
+        // 添加搜索事件
+        document.getElementById('search-btn').addEventListener('click', function() {
+            const query = document.getElementById('quick-search').value.trim();
+            if (query) {
+                location.href = `/search?q=${encodeURIComponent(query)}`;
+            }
+        });
+        
+        document.getElementById('quick-search').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('search-btn').click();
+            }
+        });
+        
+        // 初始加载
+        loadPapers(1, currentSort);
+    });
+</script>
+{% endblock %} 
